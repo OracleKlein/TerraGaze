@@ -1,0 +1,42 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+
+# Virtual environments
+.venv/
+
+# Logs / experiment tracking
+*.log
+logs/
+wandb/
+
+# Training outputs
+outputs/
+checkpoints/
+
+# Model weights
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Cache / temporary files
+.cache/
+.pytest_cache/
+tmp/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
