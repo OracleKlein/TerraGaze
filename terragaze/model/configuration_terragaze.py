@@ -48,8 +48,8 @@ def normalize_attention_pooling_query_type(value: Optional[str]) -> str:
 logger = logging.get_logger(__name__)
 
 
-class TeoNextConfig(PretrainedConfig):
-    model_type = 'teonext'
+class TerraGazeConfig(PretrainedConfig):
+    model_type = 'terragaze'
     #| Important: is_composition is set to True to indicate that this model is a composition of multiple models
     is_composition = True
 
