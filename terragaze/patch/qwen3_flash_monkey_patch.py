@@ -9,7 +9,7 @@ import torch
 from types import MethodType
 from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb
 from transformers.modeling_flash_attention_utils import flash_attn_supports_top_left_mask
-from teonext.utils.utils import get_decoder_layers
+from terragaze.utils.utils import get_decoder_layers
 
 try:
     from flash_attn.flash_attn_interface import flash_attn_varlen_func

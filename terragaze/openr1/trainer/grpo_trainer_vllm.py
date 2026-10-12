@@ -27,26 +27,15 @@ from transformers import TrainerCallback
 from trl import GRPOConfig
 from trl.models import prepare_deepspeed
 
-from teonext.model import TeoNextModel
-from teonext.model import TeoNextConfig
-from teonext.model.conversation import get_conv_template
-from teonext.openr1.arguments import TeoNextGRPOScriptArguments
-from teonext.openr1.dataset import SREGRPODataset
-from teonext.openr1.vllm_model import allow_vllm_aimv2_duplicate_registration
-from teonext.openr1.vllm_model import register_teonext_vllm_model
-from teonext.utils.constants import GROUNDING_SPECIAL_TOKENS
-from teonext.utils.constants import IMAGE_SPECIAL_TOKENS
-from teonext.utils.constants import IMG_CONTEXT_TOKEN
-from teonext.utils.constants import IMG_END_TOKEN
-from teonext.utils.constants import IMG_START_TOKEN
-from teonext.utils.bbox import bbox_coord_tokens
-from teonext.utils.bbox import bbox_text_format_from_config
-from teonext.utils.openr1_trace import trace_openr1
-from teonext.utils.openr1_trace import trace_train_runtime
-from teonext.utils.utils import apply_llm_lora
-from teonext.utils.utils import get_tensor_dtype
-from teonext.utils.utils import has_flash_attn
-from teonext.utils.utils import preprocess_images
+from terragaze.model import TerraGazeModel, TerraGazeConfig
+from terragaze.model.conversation import get_conv_template
+from terragaze.openr1.arguments import TerraGazeGRPOScriptArguments
+from terragaze.openr1.dataset import SREGRPODataset
+from terragaze.openr1.vllm_model import allow_vllm_aimv2_duplicate_registration, register_terragaze_vllm_model
+from terragaze.utils.constants import GROUNDING_SPECIAL_TOKENS, IMAGE_SPECIAL_TOKENS, IMG_CONTEXT_TOKEN, IMG_END_TOKEN, IMG_START_TOKEN
+from terragaze.utils.bbox import bbox_coord_tokens, bbox_text_format_from_config
+from terragaze.utils.openr1_trace import trace_openr1, trace_train_runtime
+from terragaze.utils.utils import apply_llm_lora, get_tensor_dtype, has_flash_attn, preprocess_images
 
 try:
     import deepspeed
@@ -305,12 +294,12 @@ def _set_requires_grad(module, requires_grad: bool) -> None:
         parameter.requires_grad = requires_grad
 
 
-def _set_teonext_use_cache(model, use_cache: bool) -> None:
+def _set_terragaze_use_cache(model, use_cache: bool) -> None:
     if not hasattr(model, "config") or not hasattr(model.config, "llm_config"):
-        raise AttributeError("TeoNext model config must define llm_config to set use_cache.")
+        raise AttributeError("TerraGaze model config must define llm_config to set use_cache.")
     language_model = getattr(model, "language_model", None)
     if language_model is None or not hasattr(language_model, "config"):
-        raise AttributeError("TeoNext model must define language_model.config to set use_cache.")
+        raise AttributeError("TerraGaze model must define language_model.config to set use_cache.")
     model.config.use_cache = use_cache
     model.config.llm_config.use_cache = use_cache
     language_model.config.use_cache = use_cache
@@ -357,7 +346,7 @@ def _iter_vllm_sync_weights(weights: Iterable[tuple[str, torch.Tensor]]) -> Iter
         yield clean_name, tensor
 
 
-def _load_teonext_processors(
+def _load_terragaze_processors(
     model_name_or_path: str,
     *,
     model_init_kwargs: dict[str, Any],
@@ -382,7 +371,7 @@ def _load_teonext_processors(
     return processing_class, image_processor
 
 
-def _prepare_teonext_tokenizer(model, tokenizer, config) -> None:
+def _prepare_terragaze_tokenizer(model, tokenizer, config) -> None:
     token_list = list(IMAGE_SPECIAL_TOKENS)
     if getattr(config, "add_grounding_special_tokens", True):
         token_list.extend(GROUNDING_SPECIAL_TOKENS)
@@ -417,7 +406,7 @@ def _prepare_teonext_tokenizer(model, tokenizer, config) -> None:
     model.language_model.config.vocab_size = len(tokenizer)
 
 
-def _load_teonext_grpo_model(
+def _load_terragaze_grpo_model(
     model_name_or_path: str,
     *,
     script_args,
@@ -443,7 +432,7 @@ def _load_teonext_grpo_model(
         if dtype_name not in dtype_mapping:
             raise ValueError(f"Unsupported torch dtype: {dtype_name}")
         load_dtype = dtype_mapping[dtype_name]
-    tokenizer, image_processor = _load_teonext_processors(
+    tokenizer, image_processor = _load_terragaze_processors(
         model_name_or_path,
         model_init_kwargs=model_init_kwargs,
         processing_class=processing_class,
@@ -451,7 +440,7 @@ def _load_teonext_grpo_model(
 
     cache_dir = model_init_kwargs.get("cache_dir", getattr(script_args, "cache_dir", None))
     trust_remote_code = model_init_kwargs.get("trust_remote_code", True)
-    config = TeoNextConfig.from_pretrained(
+    config = TerraGazeConfig.from_pretrained(
         model_name_or_path,
         cache_dir=cache_dir,
         trust_remote_code=trust_remote_code,
@@ -486,12 +475,12 @@ def _load_teonext_grpo_model(
         model_kwargs["torch_dtype"] = load_dtype
     else:
         model_kwargs.pop("torch_dtype", None)
-    model = TeoNextModel.from_pretrained(model_name_or_path, **model_kwargs)
+    model = TerraGazeModel.from_pretrained(model_name_or_path, **model_kwargs)
     model.config.torch_dtype = load_dtype or getattr(model.config, "torch_dtype", torch.float32)
     if use_cache is not None:
-        _set_teonext_use_cache(model, bool(use_cache))
+        _set_terragaze_use_cache(model, bool(use_cache))
 
-    _prepare_teonext_tokenizer(model, tokenizer, config)
+    _prepare_terragaze_tokenizer(model, tokenizer, config)
 
     device = script_args.device
     if device == "cuda" and torch.cuda.is_available():
@@ -503,7 +492,7 @@ def _load_teonext_grpo_model(
     return tokenizer, model, image_processor
 
 
-def render_teonext_prompt(
+def render_terragaze_prompt(
     model,
     tokenizer,
     question: str,
@@ -533,10 +522,10 @@ def render_teonext_prompt(
     return query, sep, eos_token_id
 
 
-class TeoNextVLLMGRPOTrainer(Trainer):
+class TerraGazeVLLMGRPOTrainer(Trainer):
     def __init__(
         self,
-        model: str | TeoNextModel,
+        model: str | TerraGazeModel,
         reward_funcs: RewardFunc | list[RewardFunc],
         args: GRPOConfig | None = None,
         train_dataset: SREGRPODataset | None = None,
@@ -546,10 +535,10 @@ class TeoNextVLLMGRPOTrainer(Trainer):
         callbacks: list[TrainerCallback] | None = None,
         optimizers: tuple[Any | None, Any | None] = (None, None),
         peft_config: Any | None = None,
-        script_args: TeoNextGRPOScriptArguments | None = None,
+        script_args: TerraGazeGRPOScriptArguments | None = None,
     ) -> None:
         if script_args is None:
-            raise ValueError("script_args is required for TeoNextVLLMGRPOTrainer.")
+            raise ValueError("script_args is required for TerraGazeVLLMGRPOTrainer.")
         if args is None:
             model_name = model if isinstance(model, str) else model.config._name_or_path
             args = GRPOConfig(f"{model_name.split('/')[-1]}-GRPO")
@@ -566,7 +555,7 @@ class TeoNextVLLMGRPOTrainer(Trainer):
             gradient_checkpointing_kwargs = dict(getattr(args, "gradient_checkpointing_kwargs", None) or {})
             if gradient_checkpointing_kwargs.get("use_reentrant") is True:
                 raise ValueError(
-                    "TeoNext GRPO with DeepSpeed and LoRA requires non-reentrant gradient checkpointing. "
+                    "TerraGaze GRPO with DeepSpeed and LoRA requires non-reentrant gradient checkpointing. "
                     "Set gradient_checkpointing_kwargs.use_reentrant=false."
                 )
             gradient_checkpointing_kwargs["use_reentrant"] = False
@@ -581,7 +570,7 @@ class TeoNextVLLMGRPOTrainer(Trainer):
         # Models
         if isinstance(model, str):
             self.model_name_or_path = model
-            processing_class, model, image_processor = _load_teonext_grpo_model(
+            processing_class, model, image_processor = _load_terragaze_grpo_model(
                 self.model_name_or_path,
                 script_args=script_args,
                 model_init_kwargs=model_init_kwargs,
@@ -590,17 +579,17 @@ class TeoNextVLLMGRPOTrainer(Trainer):
         else:
             self.model_name_or_path = getattr(getattr(model, "config", None), "_name_or_path", None)
             if not self.model_name_or_path:
-                raise ValueError("An instantiated TeoNext model must define config._name_or_path.")
+                raise ValueError("An instantiated TerraGaze model must define config._name_or_path.")
             if model_init_kwargs:
                 raise ValueError("args.model_init_kwargs can only be used when `model` is a string path.")
-            processing_class, image_processor = _load_teonext_processors(
+            processing_class, image_processor = _load_terragaze_processors(
                 self.model_name_or_path,
                 model_init_kwargs={"cache_dir": script_args.cache_dir, "trust_remote_code": True},
                 processing_class=processing_class,
             )
-            _prepare_teonext_tokenizer(model, processing_class, model.config)
+            _prepare_terragaze_tokenizer(model, processing_class, model.config)
             if args.gradient_checkpointing:
-                _set_teonext_use_cache(model, False)
+                _set_terragaze_use_cache(model, False)
 
         # PEFT / trainable policy
         bridge_trainable = not bool(getattr(script_args, "freeze_mlp", False))
@@ -610,9 +599,9 @@ class TeoNextVLLMGRPOTrainer(Trainer):
             use_llm_lora = int(getattr(peft_config, "r", 0) or 0)
             llm_lora_alpha = getattr(peft_config, "lora_alpha", None)
         if peft_config is not None and use_llm_lora <= 0:
-            raise ValueError("peft_config must define a positive LoRA rank for TeoNext GRPO.")
+            raise ValueError("peft_config must define a positive LoRA rank for TerraGaze GRPO.")
         if not bridge_trainable and peft_config is None:
-            raise ValueError("TeoNext GRPO requires bridge training, LM LoRA, or both.")
+            raise ValueError("TerraGaze GRPO requires bridge training, LM LoRA, or both.")
 
         # Apply training configuration to model
         _set_requires_grad(model, False)
@@ -643,7 +632,7 @@ class TeoNextVLLMGRPOTrainer(Trainer):
             and (hasattr(model, "disable_adapter") or hasattr(language_model, "disable_adapter"))
         )
         if not self.use_adapter_reference:
-            _tokenizer, self.ref_model, _image_processor = _load_teonext_grpo_model(
+            _tokenizer, self.ref_model, _image_processor = _load_terragaze_grpo_model(
                 self.model_name_or_path,
                 script_args=script_args,
                 model_init_kwargs=model_init_kwargs,
@@ -653,14 +642,14 @@ class TeoNextVLLMGRPOTrainer(Trainer):
             _set_requires_grad(self.ref_model, False)
         if self.ref_model is None and not self.use_adapter_reference:
             raise ValueError(
-                "TeoNext GRPO requires a reference model path or an LM LoRA adapter that can be disabled."
+                "TerraGaze GRPO requires a reference model path or an LM LoRA adapter that can be disabled."
             )
 
         # Processing class, rewards
         self.image_processor = image_processor
 
         if reward_funcs is None:
-            raise ValueError("TeoNextVLLMGRPOTrainer requires at least one reward function.")
+            raise ValueError("TerraGazeVLLMGRPOTrainer requires at least one reward function.")
         self.reward_funcs = list(reward_funcs) if isinstance(reward_funcs, list) else [reward_funcs]
         for index, reward_func in enumerate(self.reward_funcs):
             if isinstance(reward_func, str):
@@ -785,7 +774,7 @@ class TeoNextVLLMGRPOTrainer(Trainer):
 
         temperature_func = getattr(self.script_args, "temperature_func", None)
         if temperature_func is None:
-            raise ValueError("temperature_func is required for PR1-aligned TeoNext GRPO.")
+            raise ValueError("temperature_func is required for PR1-aligned TerraGaze GRPO.")
         if temperature_func not in {"constant", "linear"}:
             raise ValueError("temperature_func must be one of: constant, linear.")
         init_temp = float(self.script_args.temperature_begin)
@@ -887,11 +876,11 @@ class TeoNextVLLMGRPOTrainer(Trainer):
 
         trace_openr1("main process before deferred vLLM init")
         if not self.model_name_or_path:
-            raise ValueError("vLLM rollout requires --model_name_or_path to point at a saved TeoNext checkpoint.")
+            raise ValueError("vLLM rollout requires --model_name_or_path to point at a saved TerraGaze checkpoint.")
         if LLM is None or SamplingParams is None or EngineArgs is None:
             raise RuntimeError("vLLM rollout requires the optional vllm package to be installed.") from VLLM_IMPORT_ERROR
 
-        register_teonext_vllm_model()
+        register_terragaze_vllm_model()
         rollout_device = self._resolve_rollout_device()
         rollout_max_model_len = self._resolve_rollout_max_model_len()
         max_images_per_prompt = self._max_images_per_prompt()
@@ -933,7 +922,7 @@ class TeoNextVLLMGRPOTrainer(Trainer):
                 self.llm = LLM(**llm_kwargs)
         except TypeError as exc:
             raise RuntimeError(
-                "Installed vLLM does not accept the expected LLM constructor arguments for TeoNext rollout."
+                "Installed vLLM does not accept the expected LLM constructor arguments for TerraGaze rollout."
             ) from exc
         finally:
             if previous_cuda_device is not None:
@@ -1038,9 +1027,9 @@ class TeoNextVLLMGRPOTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         trace_openr1(f"compute_loss start batch_size={len(inputs) if isinstance(inputs, list) else 'non-list'}")
         if return_outputs:
-            raise ValueError("TeoNextVLLMGRPOTrainer does not support return_outputs.")
+            raise ValueError("TerraGazeVLLMGRPOTrainer does not support return_outputs.")
         if not isinstance(inputs, list):
-            raise TypeError("TeoNext GRPO data collator must return a list of raw sample dictionaries.")
+            raise TypeError("TerraGaze GRPO data collator must return a list of raw sample dictionaries.")
 
         self._ensure_vllm_rollout()
 
@@ -1063,7 +1052,7 @@ class TeoNextVLLMGRPOTrainer(Trainer):
         batch_size = 1
         inputs_vllm = []
         for prompt_text, sample_images in zip(prompts, images):
-            prompt, _sep, _eos_token_id = render_teonext_prompt(
+            prompt, _sep, _eos_token_id = render_terragaze_prompt(
                 self.model,
                 self.processing_class,
                 prompt_text,
@@ -1169,7 +1158,7 @@ class TeoNextVLLMGRPOTrainer(Trainer):
             )
 
         prompt_completion_records = [
-            self._prepare_teonext_prompt_completion_inputs(sample, completion_ids)
+            self._prepare_terragaze_prompt_completion_inputs(sample, completion_ids)
             for sample, completion_ids in zip(inputs, completion_id_lists)
         ]
         if not prompt_completion_records:
@@ -1210,7 +1199,7 @@ class TeoNextVLLMGRPOTrainer(Trainer):
                     elif hasattr(language_model, "disable_adapter"):
                         adapter_context = language_model.disable_adapter()
                     else:
-                        raise RuntimeError("No TeoNext or language_model adapter is available to disable.")
+                        raise RuntimeError("No TerraGaze or language_model adapter is available to disable.")
                     with adapter_context:
                         ref_logps, _ref_entropy = self._get_per_token_logps(
                             model,
@@ -1218,7 +1207,7 @@ class TeoNextVLLMGRPOTrainer(Trainer):
                             prompt_length=prompt_length,
                         )
                 else:
-                    raise RuntimeError("No TeoNext GRPO reference source is available.")
+                    raise RuntimeError("No TerraGaze GRPO reference source is available.")
             kl_terms = compute_kl_terms(policy_logps, ref_logps)
             per_token_kl = select_kl_approximator(kl_terms, self.kl_approximator)
             k1_terms.append(masked_mean(kl_terms["k1"].unsqueeze(0), completion_mask.unsqueeze(0)).mean())
@@ -1380,7 +1369,7 @@ class TeoNextVLLMGRPOTrainer(Trainer):
             self._metrics[f"rewards/{key}"].append(value / max(1, len(all_breakdowns)))
         return loss
 
-    def _prepare_teonext_prompt_completion_inputs(self, sample: dict[str, Any], completion_id_list: list[int]):
+    def _prepare_terragaze_prompt_completion_inputs(self, sample: dict[str, Any], completion_id_list: list[int]):
         if not completion_id_list:
             raise ValueError("vLLM returned an empty completion token list.")
 
@@ -1397,7 +1386,7 @@ class TeoNextVLLMGRPOTrainer(Trainer):
         device = self.accelerator.device
         pixel_values = pixel_values.to(device=device, dtype=get_tensor_dtype(policy_base_model))
 
-        prompt, _sep, eos_token_id = render_teonext_prompt(
+        prompt, _sep, eos_token_id = render_terragaze_prompt(
             policy_base_model,
             self.processing_class,
             question,
@@ -1469,4 +1458,4 @@ class TeoNextVLLMGRPOTrainer(Trainer):
         self._metrics.clear()
 
 
-VLLMTeoNextGRPOTrainer = TeoNextVLLMGRPOTrainer
+VLLMTerraGazeGRPOTrainer = TerraGazeVLLMGRPOTrainer
