@@ -23,12 +23,12 @@ import torch.nn.functional as F
 import torchvision.transforms as T
 import transformers
 from decord import VideoReader
-from teonext.model.conversation import get_conv_template
+from terragaze.model.conversation import get_conv_template
 from PIL import Image
 from torch.utils.data import ConcatDataset, WeightedRandomSampler
 from torchvision.transforms.functional import InterpolationMode
 
-from teonext.utils.constants import (
+from terragaze.utils.constants import (
     CLIP_MEAN,
     CLIP_STD,
     IMAGENET_MEAN,
@@ -39,10 +39,10 @@ from teonext.utils.constants import (
     SIGLIP_MEAN,
     SIGLIP_STD,
 )
-from teonext.utils.utils import dynamic_preprocess
-from teonext.utils.utils import expand2square
+from terragaze.utils.utils import dynamic_preprocess
+from terragaze.utils.utils import expand2square
 
-from teonext.utils.s3_fileio import Client
+from terragaze.utils.s3_fileio import Client
 
 
 def calculate_ngram_repetition(text, n):
@@ -505,7 +505,7 @@ def preprocess_fastchat_chatml(
     ds_name: str = None,
     num_image: int = 1,
 ):
-    from teonext.utils.constants import IMG_CONTEXT_TOKEN, IMG_END_TOKEN, IMG_START_TOKEN
+    from terragaze.utils.constants import IMG_CONTEXT_TOKEN, IMG_END_TOKEN, IMG_START_TOKEN
 
     assert len(sources) == 1, "process only the first conversations"
     conversations = sources[0]

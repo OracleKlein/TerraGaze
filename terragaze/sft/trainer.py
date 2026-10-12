@@ -61,12 +61,12 @@ def validate_special_lr_deepspeed_config(args):
         raise ValueError(
             "mlp_lr, vision_lr, and llm_lr require Trainer-created optimizer parameter groups. "
             "The current DeepSpeed config defines an optimizer block, so DeepSpeed will replace custom "
-            "groups with a single optimizer lr. Use teonext/config/deepspeed/zero_stage1_lr_config.json for multi-LR "
+            "groups with a single optimizer lr. Use terragaze/config/deepspeed/zero_stage1_lr_config.json for multi-LR "
             "training, or remove the optimizer block from the DeepSpeed config."
         )
 
 
-def build_teonext_optimizer_groups(opt_model, args, decay_parameters):
+def build_terragaze_optimizer_groups(opt_model, args, decay_parameters):
     trainable_named_params = [(name, param) for name, param in opt_model.named_parameters() if param.requires_grad]
     special_lr_specs = _get_special_lr_specs(args)
     matched_special_counts = {arg_name: 0 for _, _, _, arg_name in special_lr_specs}
@@ -206,7 +206,7 @@ def get_modality_length_grouped_indices(lengths, batch_size, world_size=1, mega_
     return [idx for megabatch in megabatches for idx in megabatch]
 
 
-class TeoNextLengthGroupedSampler(torch.utils.data.Sampler):
+class TerraGazeLengthGroupedSampler(torch.utils.data.Sampler):
     def __init__(self, batch_size, world_size, lengths, generator=None, group_by_modality=False):
         if lengths is None:
             raise ValueError("Lengths must be provided.")
@@ -238,14 +238,14 @@ class TeoNextLengthGroupedSampler(torch.utils.data.Sampler):
 
 
 @dataclass
-class TeoNextTrainingArguments(TrainingArguments):
+class TerraGazeTrainingArguments(TrainingArguments):
     group_by_modality_length: bool = field(
         default=False,
         metadata={'help': 'Group training samples by modality first, then by approximate sequence length.'},
     )
     mlp_lr: Optional[float] = field(
         default=None,
-        metadata={'help': 'Optional learning rate for the TeoNext modality bridge (mlp1).'},
+        metadata={'help': 'Optional learning rate for the TerraGaze modality bridge (mlp1).'},
     )
     vision_lr: Optional[float] = field(
         default=None,
@@ -257,7 +257,7 @@ class TeoNextTrainingArguments(TrainingArguments):
     )
 
 
-class TeoNextTrainer(Trainer):
+class TerraGazeTrainer(Trainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         validate_special_lr_deepspeed_config(self.args)
@@ -269,7 +269,7 @@ class TeoNextTrainer(Trainer):
 
         if self.args.group_by_modality_length:
             lengths = train_dataset.modality_length
-            return TeoNextLengthGroupedSampler(
+            return TerraGazeLengthGroupedSampler(
                 self.args.train_batch_size,
                 self.args.world_size * self.args.gradient_accumulation_steps,
                 lengths=lengths,
@@ -352,7 +352,7 @@ class TeoNextTrainer(Trainer):
 
         if self.optimizer is None:
             decay_parameters = set(self.get_decay_parameter_names(opt_model))
-            optimizer_grouped_parameters = build_teonext_optimizer_groups(
+            optimizer_grouped_parameters = build_terragaze_optimizer_groups(
                 opt_model,
                 self.args,
                 decay_parameters,
@@ -369,7 +369,7 @@ class TeoNextTrainer(Trainer):
             if present_override_keys and _has_special_lrs(self.args):
                 keys = ", ".join(present_override_keys)
                 raise ValueError(
-                    f"Optimizer kwargs contain {keys}, which would override TeoNext multi-LR parameter groups."
+                    f"Optimizer kwargs contain {keys}, which would override TerraGaze multi-LR parameter groups."
                 )
             for key in present_override_keys:
                 optimizer_grouped_parameters = optimizer_kwargs.pop(key)

@@ -1,1 +1,1 @@
-"""SFT training package for TeoNext."""
+"""SFT training package for TerraGaze."""

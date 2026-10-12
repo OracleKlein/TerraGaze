@@ -16,7 +16,7 @@ import torch.distributed as dist
 from torch.utils.data import IterableDataset, get_worker_info
 from transformers.trainer_pt_utils import LabelSmoother
 
-from teonext.utils.constants import IMG_CONTEXT_TOKEN, IMG_END_TOKEN, IMG_START_TOKEN
+from terragaze.utils.constants import IMG_CONTEXT_TOKEN, IMG_END_TOKEN, IMG_START_TOKEN
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 logger = logging.getLogger(__name__)

@@ -34,36 +34,36 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoin
 from transformers.utils.logging import enable_default_handler, enable_explicit_format, set_verbosity
 from transformers.models.siglip import SiglipVisionConfig, SiglipVisionModel
 from transformers.models.clip import CLIPVisionConfig, CLIPVisionModel
-from teonext.utils.dist_utils import destroy_dist_process_group, init_dist
-from teonext.utils.utils import apply_llm_lora
-from teonext.utils.utils import expand2square
-from teonext.utils.utils import has_flash_attn
+from terragaze.utils.dist_utils import destroy_dist_process_group, init_dist
+from terragaze.utils.utils import apply_llm_lora
+from terragaze.utils.utils import expand2square 
+from terragaze.utils.utils import has_flash_attn
 
-from teonext.model import (
-    TeoNextConfig, 
-    TeoNextModel,
+from terragaze.model import (
+    TerraGazeConfig, 
+    TerraGazeModel,
 )
-from teonext.patch import (
+from terragaze.patch import (
     concat_pad_data_collator,
     replace_qwen3_attention_class,
 )
-from teonext.utils.constants import (
+from terragaze.utils.constants import (
     GROUNDING_SPECIAL_TOKENS,
     IMAGE_SPECIAL_TOKENS,
     IMG_END_TOKEN, IMG_CONTEXT_TOKEN,
 )
-from teonext.utils.bbox import (
+from terragaze.utils.bbox import (
     bbox_coord_tokens,
     convert_conversation_bboxes_to_coord_tokens,
 )
-from teonext.utils.utils import sort_media_by_timestamps
-from teonext.sft.dataset import (
+from terragaze.utils.utils import sort_media_by_timestamps
+from terragaze.sft.dataset import (
     ConcatDataset,
     dynamic_preprocess, jpeg_degrade_functions, qualities,
     preprocess_pretrain, preprocess_internvl2_5, preprocess_fastchat_chatml
 )
-from teonext.sft.dataset_packed import PackedDataset, packed_collate_fn
-from teonext.sft.trainer import TeoNextTrainer, TeoNextTrainingArguments
+from terragaze.sft.dataset_packed import PackedDataset, packed_collate_fn
+from terragaze.sft.trainer import TerraGazeTrainer, TerraGazeTrainingArguments
 
 # Set constants for image processing and logging
 IGNORE_INDEX = -100
@@ -247,7 +247,7 @@ class ModelArguments:
         metadata={
             'help': (
                 'Comma-separated ViT hidden-state layers for attention_pooling, for example "-4,-10". '
-                'When unset, TeoNextConfig keeps its bridge-specific default.'
+                'When unset, TerraGazeConfig keeps its bridge-specific default.'
             )
         },
     )
@@ -1161,7 +1161,7 @@ def train():
     # If use DeepSpeed zero3, init_dist must before HfArgumentParser
     launcher = os.environ.get('LAUNCHER', 'slurm')
     init_dist(launcher=launcher, backend='nccl')
-    parser = HfArgumentParser((ModelArguments, DataArguments, TeoNextTrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DataArguments, TerraGazeTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith('.json'):
         # If we pass only one argument to the script, and it's the path to a json file,
         # let's parse it to get our arguments.
@@ -1252,7 +1252,7 @@ def train():
     tokenizer.model_max_length = data_args.max_seq_length
 
     # if model_args.model_name_or_path is not None:
-    #     checkpoint_grounding_special_tokens = TeoNextConfig.from_pretrained(
+    #     checkpoint_grounding_special_tokens = TerraGazeConfig.from_pretrained(
     #         model_args.model_name_or_path
     #     ).add_grounding_special_tokens
     #     if checkpoint_grounding_special_tokens != data_args.add_grounding_special_tokens:
@@ -1286,13 +1286,13 @@ def train():
     if model_args.use_liger:
         raise NotImplementedError
 
-    # `model_name_or_path` resumes from an existing TeoNext/VLM checkpoint.
-    # Otherwise, build a fresh TeoNext model from `vision_path` + `llm_path`.
+    # `model_name_or_path` resumes from an existing TerraGaze/VLM checkpoint.
+    # Otherwise, build a fresh TerraGaze model from `vision_path` + `llm_path`.
     if model_args.model_name_or_path is not None:
-        logger.info('Loading TeoNextModel...')
-        config = TeoNextConfig.from_pretrained(model_args.model_name_or_path)
+        logger.info('Loading TerraGazeModel...')
+        config = TerraGazeConfig.from_pretrained(model_args.model_name_or_path)
         config.llm_config._attn_implementation = attn_implementation
-        #| use_flash_attn is set to true by default in teonextmodel
+        #| use_flash_attn is set to true by default in terragazemodel
         config.vision_config._attn_implementation = attn_implementation
         if hasattr(config.vision_config, 'use_flash_attn'):
             config.vision_config.use_flash_attn = attn_implementation == 'flash_attention_2'
@@ -1313,7 +1313,7 @@ def train():
             )
         config.min_dynamic_patch = data_args.min_dynamic_patch
         config.max_dynamic_patch = data_args.max_dynamic_patch
-        model = TeoNextModel.from_pretrained(model_args.model_name_or_path, torch_dtype=model_torch_dtype, config=config)
+        model = TerraGazeModel.from_pretrained(model_args.model_name_or_path, torch_dtype=model_torch_dtype, config=config)
     else:
         backend = _detect_vision_backend(model_args.vision_path)
         if backend == "siglip":
@@ -1350,8 +1350,8 @@ def train():
             trust_remote_code=True
         )
 
-        logger.info('Building TeoNextConfig...')
-        teonext_config = TeoNextConfig(
+        logger.info('Building TerraGazeConfig...')
+        terragaze_config = TerraGazeConfig(
             vision_config.to_dict(),
             llm_config.to_dict(),
             use_backbone_lora=model_args.use_backbone_lora,
@@ -1375,10 +1375,10 @@ def train():
             attention_pooling_query_type=model_args.attention_pooling_query_type,
         )
         #| force_image_size is the desired image size for each image
-        teonext_config.force_image_size = data_args.force_image_size
+        terragaze_config.force_image_size = data_args.force_image_size
 
-        logger.info('Building TeoNextModel...')
-        model = TeoNextModel(teonext_config, vision_model, llm)
+        logger.info('Building TerraGazeModel...')
+        model = TerraGazeModel(terragaze_config, vision_model, llm)
 
     model.img_context_token_id = img_context_token_id #| placeholder token id for image context
     model.tokenizer = tokenizer #| this logic replaces initialize_vision_tokenizer in llava_arch.py
@@ -1529,7 +1529,7 @@ def train():
         if hasattr(model, 'wrap_backbone_lora'):
             model.wrap_backbone_lora(r=model_args.use_backbone_lora, lora_alpha=2 * model_args.use_backbone_lora)
         else:
-            raise NotImplementedError('wrap_backbone_lora is not implemented in TeoNextModel.')
+            raise NotImplementedError('wrap_backbone_lora is not implemented in TerraGazeModel.')
         model.config.use_backbone_lora = model_args.use_backbone_lora
 
     if model_args.use_llm_lora:
@@ -1590,7 +1590,7 @@ def train():
     #|   * Note: No cu_seqlens, no statistics, and no loss_weight (uniform average loss fallback).
     #| ======================================================================
     training_args.split_annotations = data_args.split_annotations
-    trainer = TeoNextTrainer(
+    trainer = TerraGazeTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
