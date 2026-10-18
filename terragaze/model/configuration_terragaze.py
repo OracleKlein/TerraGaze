@@ -1,4 +1,4 @@
-# Adopted from https://github.com/opengvlab/internvl. Below is the orignial copyright:
+# Modified from https://github.com/opengvlab/internvl. Below is the orignal copyright:
 # --------------------------------------------------------
 # InternVL
 # Copyright (c) 2024 OpenGVLab
